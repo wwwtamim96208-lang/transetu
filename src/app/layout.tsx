@@ -1,0 +1,39 @@
+import type { Metadata, Viewport } from 'next';
+import Link from 'next/link';
+import './globals.css';
+import { getCurrentUser, ROLE_BN } from '@/lib/auth';
+import { LogoutButton } from '@/components/LogoutButton';
+
+export const metadata: Metadata = {
+  title: 'ত্রাণসেতু | TranSetu',
+  description: 'সব সংস্থার ত্রাণ বিতরণের একক, স্বচ্ছ হিসাব',
+};
+
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#0a4f44' };
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const user = await getCurrentUser();
+  return (
+    <html lang="bn">
+      <body>
+        <a href="#main" className="skip-link">মূল অংশে যান</a>
+        <header className="topbar">
+          <Link href="/" className="brand">ত্রাণসেতু</Link>
+          {user && (
+            <>
+              <nav aria-label="প্রধান মেনু">
+                <Link href="/households">পরিবার তালিকা</Link>
+                <Link href="/households/new">নতুন পরিবার</Link>
+              </nav>
+              <div className="who">
+                <span>{user.name} · {ROLE_BN[user.role]} · <span className="hide-sm">{user.orgName}</span></span>
+                <LogoutButton />
+              </div>
+            </>
+          )}
+        </header>
+        <main id="main">{children}</main>
+      </body>
+    </html>
+  );
+}

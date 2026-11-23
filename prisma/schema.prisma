@@ -1,0 +1,324 @@
+// TranSetu (ত্রাণসেতু) - unified relief ledger
+// The full schema is defined up front (including Day 2/3 tables) so that the
+// offline sync and allocation work does not need disruptive migrations later.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Geography ----------
+
+enum AreaLevel {
+  DISTRICT
+  UPAZILA
+  UNION
+  WARD
+}
+
+model Area {
+  id         String      @id @default(uuid()) @db.Uuid
+  name       String
+  nameBn     String
+  level      AreaLevel
+  parentId   String?     @db.Uuid
+  parent     Area?       @relation("AreaTree", fields: [parentId], references: [id])
+  children   Area[]      @relation("AreaTree")
+  households Household[]
+  users      User[]
+  stocks     Stock[]
+
+  @@index([parentId])
+}
+
+// ---------- Organisations & users ----------
+
+enum OrgType {
+  GOVT
+  NGO
+  VOLUNTEER_GROUP
+}
+
+enum Role {
+  ADMIN       // upazila/district administration: sees and manages everything
+  COORDINATOR // NGO coordinator: plans distributions, edits own org's records
+  VOLUNTEER   // field worker: limited to assigned union
+}
+
+model Organization {
+  id            String         @id @default(uuid()) @db.Uuid
+  name          String
+  nameBn        String
+  type          OrgType
+  users         User[]
+  households    Household[]    @relation("HouseholdOrg")
+  stocks        Stock[]
+  distributions Distribution[]
+  createdAt     DateTime       @default(now())
+}
+
+model User {
+  id               String         @id @default(uuid()) @db.Uuid
+  email            String         @unique
+  name             String
+  passwordHash     String
+  role             Role
+  orgId            String         @db.Uuid
+  org              Organization   @relation(fields: [orgId], references: [id])
+  /// For VOLUNTEER: the UNION they work in (resource isolation).
+  areaId           String?        @db.Uuid
+  area             Area?          @relation(fields: [areaId], references: [id])
+  isActive         Boolean        @default(true)
+  failedLoginCount Int            @default(0)
+  lockedUntil      DateTime?
+  sessions         Session[]
+  households       Household[]    @relation("HouseholdCreator")
+  distributions    Distribution[]
+  allotments       Allotment[]
+  auditLogs        AuditLog[]
+  createdAt        DateTime       @default(now())
+}
+
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  /// SHA-256 of the cookie token; the raw token is never stored.
+  tokenHash  String   @unique
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ---------- Households ----------
+
+enum DamageLevel {
+  NONE
+  PARTIAL
+  SEVERE
+  TOTAL
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+model Household {
+  id            String         @id @default(uuid()) @db.Uuid // may be generated on the client (offline / idempotency)
+  headName      String
+  /// Phonetic key of headName for duplicate detection (see domain/normalize.ts).
+  headNameKey   String
+  phone         String?
+  /// HMAC of the NID. Raw NID is never stored. Unique -> DB-level guard against races.
+  nidHash       String?        @unique
+  nidLast4      String?
+  wardId        String         @db.Uuid
+  ward          Area           @relation(fields: [wardId], references: [id])
+  address       String?
+  memberCount   Int
+  femaleHeaded  Boolean        @default(false)
+  damageLevel   DamageLevel    @default(NONE)
+  /// PBKDF2 hash of the printed token-card code (verifiable offline).
+  tokenHash     String
+  /// Optimistic-concurrency version; incremented on every update.
+  version       Int            @default(1)
+  createdById   String         @db.Uuid
+  createdBy     User           @relation("HouseholdCreator", fields: [createdById], references: [id])
+  createdByOrgId String        @db.Uuid
+  createdByOrg  Organization   @relation("HouseholdOrg", fields: [createdByOrgId], references: [id])
+  members       Member[]
+  distributions Distribution[]
+  reviewItems   ReviewItem[]   @relation("ReviewHousehold")
+  relatedReviews ReviewItem[]  @relation("ReviewRelatedHousehold")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
+  deletedReason String?
+
+  @@index([wardId])
+  @@index([phone])
+  @@index([headNameKey])
+  @@index([deletedAt])
+}
+
+model Member {
+  id             String    @id @default(uuid()) @db.Uuid
+  householdId    String    @db.Uuid
+  household      Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name           String?
+  age            Int
+  gender         Gender
+  disability     Boolean   @default(false)
+  chronicIllness Boolean   @default(false)
+  pregnant       Boolean   @default(false)
+
+  @@index([householdId])
+}
+
+// ---------- Relief catalogue & stock (Day 2/3) ----------
+
+enum NeedBasis {
+  PER_PERSON
+  PER_HOUSEHOLD
+}
+
+model ReliefCategory {
+  id            String         @id @default(uuid()) @db.Uuid
+  code          String         @unique // FOOD, WATER, MEDICINE
+  nameBn        String
+  nameEn        String
+  unit          String         // packet, litre, kit
+  needBasis     NeedBasis
+  /// Units needed per person (or household) per day; used for gap analysis.
+  needPerDay    Float
+  /// Repeat-relief warning window in days.
+  cooldownDays  Int
+  stocks        Stock[]
+  distributions Distribution[]
+}
+
+model Stock {
+  id         String         @id @default(uuid()) @db.Uuid
+  orgId      String         @db.Uuid
+  org        Organization   @relation(fields: [orgId], references: [id])
+  categoryId String         @db.Uuid
+  category   ReliefCategory @relation(fields: [categoryId], references: [id])
+  /// Upazila the stock is held for.
+  areaId     String         @db.Uuid
+  area       Area           @relation(fields: [areaId], references: [id])
+  quantity   Int            // unallotted quantity; never below 0 (enforced with conditional updates)
+  allotments Allotment[]
+  updatedAt  DateTime       @updatedAt
+
+  @@unique([orgId, categoryId, areaId])
+}
+
+enum AllotmentStatus {
+  ACTIVE
+  RETURNED
+  CLOSED
+}
+
+/// Stock physically handed to one volunteer for a field trip.
+/// Offline devices cannot deliver more than `remaining`.
+model Allotment {
+  id            String          @id @default(uuid()) @db.Uuid
+  stockId       String          @db.Uuid
+  stock         Stock           @relation(fields: [stockId], references: [id])
+  volunteerId   String          @db.Uuid
+  volunteer     User            @relation(fields: [volunteerId], references: [id])
+  quantity      Int
+  remaining     Int
+  status        AllotmentStatus @default(ACTIVE)
+  distributions Distribution[]
+  createdAt     DateTime        @default(now())
+}
+
+// ---------- Distributions (central ledger) ----------
+
+enum DistributionStatus {
+  PLANNED
+  DISPATCHED
+  AWAITING_CONFIRMATION
+  DELIVERED
+  FAILED
+  EXPIRED
+}
+
+enum ConfirmMethod {
+  TOKEN_CARD
+  SMS_OTP
+}
+
+model Distribution {
+  id               String             @id @default(uuid()) @db.Uuid // client-generated UUID -> idempotent sync
+  householdId      String             @db.Uuid
+  household        Household          @relation(fields: [householdId], references: [id])
+  categoryId       String             @db.Uuid
+  category         ReliefCategory     @relation(fields: [categoryId], references: [id])
+  quantity         Int
+  orgId            String             @db.Uuid
+  org              Organization       @relation(fields: [orgId], references: [id])
+  volunteerId      String             @db.Uuid
+  volunteer        User               @relation(fields: [volunteerId], references: [id])
+  allotmentId      String?            @db.Uuid
+  allotment        Allotment?         @relation(fields: [allotmentId], references: [id])
+  status           DistributionStatus @default(PLANNED)
+  confirmMethod    ConfirmMethod?
+  confirmAttempts  Int                @default(0)
+  confirmedAt      DateTime?
+  /// Set when given inside the cooldown window.
+  overrideReason   String?
+  /// When it happened on the device (may be long before sync).
+  occurredAt       DateTime
+  createdOffline   Boolean            @default(false)
+  clientDeviceId   String?
+  syncedAt         DateTime?
+  version          Int                @default(1)
+  reviewItems      ReviewItem[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([householdId, categoryId, status])
+  @@index([status])
+  @@index([orgId])
+}
+
+// ---------- Review queue & audit ----------
+
+enum ReviewType {
+  DUPLICATE_HOUSEHOLD
+  REPEAT_RELIEF
+  SYNC_CONFLICT
+}
+
+enum ReviewStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+model ReviewItem {
+  id                 String        @id @default(uuid()) @db.Uuid
+  type               ReviewType
+  status             ReviewStatus  @default(OPEN)
+  householdId        String        @db.Uuid
+  household          Household     @relation("ReviewHousehold", fields: [householdId], references: [id])
+  relatedHouseholdId String?       @db.Uuid
+  relatedHousehold   Household?    @relation("ReviewRelatedHousehold", fields: [relatedHouseholdId], references: [id])
+  distributionId     String?       @db.Uuid
+  distribution       Distribution? @relation(fields: [distributionId], references: [id])
+  details            Json
+  createdById        String        @db.Uuid
+  resolvedById       String?       @db.Uuid
+  resolution         String?
+  createdAt          DateTime      @default(now())
+  resolvedAt         DateTime?
+
+  @@index([status, type])
+  @@index([householdId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String   // e.g. HOUSEHOLD_CREATE, LOGIN_FAILED
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
