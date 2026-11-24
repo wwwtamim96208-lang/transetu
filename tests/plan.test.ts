@@ -52,6 +52,7 @@ test('conflicting constraints: must-include need exceeds stock -> infeasible, be
   assert.ok(c && c.severity === 'blocking');
   assert.equal(r.lines.length, 2);
   assert.ok(r.lines.every((l) => l.mustIncluded)); // must-include served before the higher-damage family
+  assert.ok(r.lines.every((l) => l.mustReasons.includes('প্রতিবন্ধী সদস্য আছে'))); // explains WHY it is must-include
   assert.ok(r.uncovered.some((u) => u.householdId === 'x'));
 });
 

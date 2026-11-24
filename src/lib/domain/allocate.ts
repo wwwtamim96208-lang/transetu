@@ -53,6 +53,8 @@ export interface PlanLine {
   score: number;
   reasons: PriorityReason[];
   mustIncluded: boolean;
+  /** Which "must include" conditions this household matched (Bangla labels). */
+  mustReasons: string[];
 }
 
 export type UncoveredReason = 'STOCK_EXHAUSTED' | 'IN_COOLDOWN' | 'HOUSEHOLD_LIMIT';
@@ -129,8 +131,9 @@ export function planAllocation(households: PlanHousehold[], category: CategoryNe
     });
     const fullNeed = suggestedQuantity(category, h.memberCount);
     const need = cap ? Math.min(fullNeed, cap) : fullNeed;
-    const must = opts.mustInclude.some((f) => hasFlag(h, f));
-    return { h, need, score: priority.score, reasons: priority.reasons, must, inCooldown: cooldown.withinCooldown };
+    const matched = opts.mustInclude.filter((f) => hasFlag(h, f));
+    const must = matched.length > 0;
+    return { h, need, score: priority.score, reasons: priority.reasons, must, mustReasons: matched.map((f) => MUST_BN[f]), inCooldown: cooldown.withinCooldown };
   });
 
   const uncovered: Uncovered[] = [];
@@ -226,7 +229,7 @@ export function planAllocation(households: PlanHousehold[], category: CategoryNe
   for (const s of inScope) {
     const q = qty.get(s.h.id);
     if (q && q > 0) {
-      lines.push({ householdId: s.h.id, headName: s.h.headName, areaName: s.h.areaName, need: s.need, qty: q, score: s.score, reasons: s.reasons, mustIncluded: s.must });
+      lines.push({ householdId: s.h.id, headName: s.h.headName, areaName: s.h.areaName, need: s.need, qty: q, score: s.score, reasons: s.reasons, mustIncluded: s.must, mustReasons: s.mustReasons });
     } else {
       uncovered.push(toUncovered(s, 'STOCK_EXHAUSTED'));
     }

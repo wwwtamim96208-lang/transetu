@@ -184,7 +184,7 @@ export function PlanTool({ categories, unions, stocks, volunteers }: Props) {
                     {r.lines.map((l, i) => (
                       <tr key={l.householdId}>
                         <td>{bnNum(i + 1)}</td>
-                        <td><a href={`/households/${l.householdId}`}>{l.headName}</a><div className="hint">{l.areaName}</div>{l.mustIncluded && <span className="badge badge-warn">অবশ্যই</span>}</td>
+                        <td><a href={`/households/${l.householdId}`}>{l.headName}</a><div className="hint">{l.areaName}</div>{l.mustIncluded && <span className="badge badge-warn" title={l.mustReasons.join(', ')}>অবশ্যই: {l.mustReasons.join(', ')}</span>}</td>
                         <td><strong>{bnNum(l.score)}</strong><div className="hint">{l.reasons.slice(0, 3).map((x) => `${x.label} (+${bnNum(x.points)})`).join(' · ')}</div></td>
                         <td>{bnNum(l.need)}</td>
                         <td>{bnNum(l.qty)}{l.qty < l.need && <div className="hint">আংশিক</div>}</td>

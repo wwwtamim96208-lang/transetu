@@ -1,7 +1,14 @@
 # ত্রাণসেতু (TranSetu)
 
-**Track:** World Problem Solver
-**Declared advanced challenges:** A04 Offline-First Functionality · A02 Intelligent Decisions & Optimization
+**One shared, offline-capable relief ledger for flood response in Bangladesh.**
+
+| | |
+|---|---|
+| **Track** | World Problem Solver |
+| **Declared advanced challenges** | **A04** Offline-First Functionality · **A02** Intelligent Decisions & Optimization |
+| **Live app** | https://transetu.vercel.app |
+| **Video** | _add YouTube link_ |
+| **Test access** | Demo accounts are listed below. **The password is provided privately in the submission form.** |
 
 ## The problem
 
@@ -23,18 +30,24 @@ TranSetu puts every organisation's distributions into **one ledger**. It:
 
 Affected families interact only through a printed token card.
 
-## Status
+## Requirement map (where to verify each item)
 
-| Part | State |
-|---|---|
-| Household registry: CRUD, 3-tier duplicate check, roles, audit log | ✅ Day 1 |
-| Stock, allotments, distribution state machine, token confirmation, central ledger | ✅ Day 2 |
-| Offline field mode (A04): service worker, IndexedDB, outbox, idempotent sync, conflict review | ✅ Day 2 |
-| Priority allocation planner (A02), gap / unreached dashboard | ✅ Day 3 |
+| ID | Requirement | Where it is implemented / how to see it |
+|---|---|---|
+| M01 | 3+ connected modules, end-to-end workflow | Household registry → stock and allotment → field distribution (offline) → central ledger → review queue → gap dashboard. One family's journey crosses every module. |
+| M02 | CRUD, persistence, relations | PostgreSQL (Neon) through Prisma: 12 related tables. Household and member CRUD, soft delete. FK and unique constraints, plus a `version` column for consistency. |
+| M03 | Authentication and authorization | bcrypt passwords and hashed session tokens in httpOnly cookies. 3 roles. Volunteers can only reach their own union; coordinators can only change their own organisation's records. Out-of-scope requests return 404. |
+| M04 | Rule-based, multi-condition workflows | Distribution state machine. Three-tier duplicate policy. Per-category cooldown with mandatory override reason. Card-code confirmation. 24-hour expiry. |
+| M05 | Search, filter, sort, aggregation | Household and ledger filters (area, damage, vulnerability, status, organisation). Priority score. Gap dashboard (need, delivered, gap, coverage per category and union). |
+| M06 | Validation, duplicate actions, recovery | Zod plus Bangla field errors. Idempotent create and sync (client UUIDs). Double-submit guards. Offline outbox with retry. Optimistic-lock conflicts. Bangla error pages. |
+| M07 | Responsive and accessible | Mobile-first field screen. Labels on every input. `aria-live` messages. Skip link. Visible focus. Works with the keyboard only. |
+| M08 | Deployment and docs | Vercel (Singapore region) with Neon Postgres (Singapore). This README. 34 unit tests (`npm test`). |
+| **A04** | Offline-first | Service worker plus IndexedDB outbox. Card codes verified offline. Idempotent batch sync. Conflicts are flagged, not lost. See "Offline-first design" below. |
+| **A02** | Intelligent decisions | Explainable priority score and an allocation planner with constraints. Infeasible or conflicting requests are explained, and the best partial plan is returned. See "Allocation planner" below. |
 
 ## Tech stack
 
-Next.js 15 (App Router, TypeScript) · PostgreSQL · Prisma 6 · Zod · bcryptjs · (Day 2: Dexie/IndexedDB + service worker)
+Next.js 15 (App Router, TypeScript) · PostgreSQL (Neon) · Prisma 6 · Zod · bcryptjs · hand-written service worker and IndexedDB wrapper. There are no UI or offline libraries; the offline logic is small enough to read and test.
 
 ## Setup
 
@@ -57,7 +70,7 @@ npm test                    # domain logic unit tests
 
 ## Demo accounts
 
-All demo accounts use the password `Demo@1234`, which can be changed via `SEED_PASSWORD`.
+The password for these accounts is **provided privately in the submission form**. For a local setup, the password is whatever you put in `SEED_PASSWORD` (default `Demo@1234`).
 
 | Role | Email | Scope |
 |---|---|---|
@@ -69,6 +82,25 @@ All demo accounts use the password `Demo@1234`, which can be changed via `SEED_P
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  subgraph Phone["Volunteer phone (works offline)"]
+    UI[Field page /field] --> IDB[(IndexedDB<br/>field pack + outbox)]
+    SW[Service worker] -. caches page .-> UI
+    UI --> D1[domain: priority, cooldown,<br/>card verify WebCrypto]
+  end
+  subgraph Server["Next.js on Vercel (sin1)"]
+    API[API routes] --> SVC[services: households, distributions,<br/>stock, planning, reviews]
+    SVC --> D2[domain: same pure rules<br/>+ allocation planner]
+    SVC --> DB[(PostgreSQL / Neon)]
+    PAGES[Admin & coordinator pages] --> SVC
+  end
+  IDB -- "GET /api/field/pack" --- API
+  IDB -- "POST /api/sync/push (idempotent batch)" --> API
+```
+
+The same pure rules in `src/lib/domain` (priority, cooldown, duplicate, state machine) run on the phone and on the server. A decision made offline is the same decision the server re-checks.
+
 ```
 src/
   lib/domain/        pure logic, no framework: runs on server, in browser (offline) and in tests
@@ -76,12 +108,17 @@ src/
     duplicate.ts     3-tier duplicate policy
     priority.ts      explainable priority score
     cooldown.ts      repeat-relief window
-    token.ts         offline-verifiable token-card codes, NID hashing
-  lib/               server: auth (sessions), permissions, validation, household service, audit
+    token.ts         card codes + NID hashing (server); token-web.ts = same check in the browser
+    distribution.ts  state machine, quantities, windows
+    allocate.ts      A02 allocation planner
+    gap.ts           need / delivered / gap / unreached
+  lib/offline/       device side: IndexedDB, sync client, derived state (remaining stock, ranking)
+  lib/               server: auth (sessions), permissions, validation, households, distributions (sync),
+                     stock, planning, reviews, audit
   app/api/           thin route handlers -> lib services
   app/               pages (server components) + components/ (client forms)
 prisma/              schema (full, incl. later-phase tables) + deterministic seed
-tests/               node:test unit tests for lib/domain
+tests/               node:test unit tests (domain, offline derivations, planner, gap)
 ```
 
 ## Key rules
@@ -238,7 +275,7 @@ The calculations are in `src/lib/domain/gap.ts` and unit-tested.
 - damage: 0, 8, 15 or 25 (none, partial, severe, total)
 - never received this category: +25; otherwise +1 per day since the last delivery, capped at 20
 
-## Demo cases (Day 1)
+## Demo cases: registry
 
 Log in as `coord.alo@demo.bd` and open **New household**. Select **তাহিরপুর সদর ওয়ার্ড ১** as the ward, then try:
 
@@ -249,7 +286,7 @@ Log in as `coord.alo@demo.bd` and open **New household**. Select **তাহি�
 5. Open the same household in two tabs and edit both. The second save gets a version-conflict message.
 6. Log in as `vol3@demo.bd`. Households outside Fenarbak are invisible, and their URLs return 404.
 
-## Demo cases (Day 2: offline)
+## Demo cases: offline (A04)
 
 Run `npm run db:seed`. It prints two demo card codes.
 
@@ -264,8 +301,41 @@ Run `npm run db:seed`. It prints two demo card codes.
 
 Test offline on the deployed HTTPS site or with `npm run build && npm start`. The service worker is unreliable under `npm run dev`.
 
+## Demo cases: planner (A02) and dashboard
+
+1. Log in as `coord.alo@demo.bd`. The dashboard opens: households never reached, gap per category, coverage per union.
+2. Open **বরাদ্দ পরিকল্পনা** and choose খাদ্য প্যাকেট, তাহিরপুর সদর, use **3**, and tick **প্রতিবন্ধী সদস্য আছে**.
+3. The result is "সব শর্ত একসাথে পূরণ সম্ভব নয়": must-include need is greater than 3. The 3 highest-priority must-include families are served, each with its reasons. Must-include families that were served recently are excluded, with a note saying which rule won.
+4. Untick must-include and set the use quantity empty. The full plan appears; families in cooldown are listed as not covered.
+5. Choose a volunteer and press **বরাদ্দ দিন**. Stock decreases atomically, and the plan is recorded in the audit log.
+
+## Edge cases covered
+
+| Area | Case | Expected |
+|---|---|---|
+| Registry | Same NID twice, including two simultaneous submits | Blocked; the DB unique index decides the race. |
+| Registry | "মোঃ রহিম" vs "Md. Rahim" vs "রহীম" in the same ward | Flagged for review. |
+| Registry | Invalid phone or NID, or more special members than total members | Bangla field error. |
+| Registry | Two people edit the same household | The second save gets a version conflict; no silent overwrite. |
+| Auth | 5 wrong passwords | Account locked for 15 minutes. |
+| Auth | Volunteer opens another union's household URL | 404. |
+| Auth | Cross-site POST | Rejected (Origin check). |
+| Sync | Same item pushed twice / at the same moment | Stored once (`duplicate`). |
+| Sync | Two offline volunteers serve the same family | Both stored; the later one is flagged `REPEAT_RELIEF`. |
+| Sync | Tampered device claims DELIVERED with a wrong code | Kept as AWAITING, flagged `CODE_REJECTED_BY_SERVER`. |
+| Sync | Allotment closed while the phone was offline | Stored, flagged `ALLOTMENT_CLOSED`; stock is never negative. |
+| Sync | Session expired offline | 401; the outbox is kept and syncs after login. |
+| Sync | Phone clock in the future | Clamped to server time, flagged. |
+| Stock | Two coordinators allot the last units | Conditional decrement: one succeeds, the other gets "স্টকে যথেষ্ট নেই". |
+| Stock | Volunteer tries to hand out more than their allotment offline | Blocked on the device. |
+| Confirm | 3 wrong codes on the phone / 5 online | Code entry locked; marked FAILED and sent to review. |
+| Planner | Zero stock, nobody eligible, negative numbers | No crash; blocking message. |
+| Planner | Must-include need > stock, must-include family in cooldown | Infeasible or warning explained, best partial plan. |
+
 ## Limitations and notes
 
 - Area names are a demo setup and should be verified before being shown as official data.
 - All seeded people, phones and NIDs are fictional.
+- Household registration needs a connection; field distribution and confirmation work offline. Offline registration would follow the same outbox pattern.
+- Incognito windows delete IndexedDB when they are closed, so pending offline items in an Incognito window are lost if it is closed before syncing. Real use is a normal browser or an installed web app.
 - An 8-character card code has limited entropy. PBKDF2 slows brute force on a stolen device but doesn't prevent it. Re-issuing codes (a new code version) is planned.
