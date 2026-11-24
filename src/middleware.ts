@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 // Fast gate only: checks that a session cookie exists. The real check
 // (token hash, expiry, active user, role) happens in requireUser()/getCurrentUser().
-const PUBLIC = ['/login', '/api/auth/login'];
+const PUBLIC = ['/login', '/api/auth/login', '/sw.js'];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -19,5 +19,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|sw.js).*)'],
 };

@@ -71,3 +71,58 @@ export const loginSchema = z.object({
 export type HouseholdCreateInput = z.infer<typeof householdCreateSchema>;
 export type HouseholdUpdateInput = z.infer<typeof householdUpdateSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;
+
+// ---------------------------------------------------------------- Day 2
+
+export const syncItemSchema = z.object({
+  id: z.string().uuid(),
+  householdId: z.string().uuid(),
+  categoryId: z.string().uuid(),
+  allotmentId: z.string().uuid(),
+  quantity: z.number().int().min(1).max(10000),
+  status: z.enum(['AWAITING_CONFIRMATION', 'DELIVERED', 'FAILED']),
+  occurredAt: z.string().datetime(),
+  confirmCode: z.string().max(20).optional(),
+  confirmAttempts: z.number().int().min(0).max(100).default(0),
+  overrideReason: optionalText(500),
+  note: optionalText(300),
+  createdOffline: z.boolean().default(false),
+});
+
+export const pushSchema = z.object({
+  deviceId: z.string().min(8).max(64),
+  items: z.array(syncItemSchema).min(1).max(100),
+});
+
+export const confirmSchema = z.object({ code: z.string().trim().min(1, 'কোড লিখুন').max(20) });
+
+export const allotmentSchema = z.object({
+  stockId: z.string().uuid('স্টক নির্বাচন করুন'),
+  volunteerId: z.string().uuid('স্বেচ্ছাসেবী নির্বাচন করুন'),
+  quantity: z.coerce.number({ invalid_type_error: 'পরিমাণ লিখুন' }).int().min(1, 'কমপক্ষে ১').max(100000),
+});
+
+export const receiveStockSchema = z.object({
+  categoryId: z.string().uuid('ক্যাটাগরি নির্বাচন করুন'),
+  areaId: z.string().uuid('উপজেলা নির্বাচন করুন'),
+  quantity: z.coerce.number({ invalid_type_error: 'পরিমাণ লিখুন' }).int().min(1, 'কমপক্ষে ১').max(1000000),
+  orgId: z.string().uuid().optional(),
+});
+
+export const resolveReviewSchema = z.object({
+  status: z.enum(['RESOLVED', 'DISMISSED']),
+  resolution: z.string().trim().min(5, 'সিদ্ধান্তের কারণ লিখুন (কমপক্ষে ৫ অক্ষর)').max(500),
+});
+
+export const ledgerQuerySchema = z.object({
+  q: optionalText(100).catch(undefined),
+  status: z.enum(['PLANNED', 'DISPATCHED', 'AWAITING_CONFIRMATION', 'DELIVERED', 'FAILED', 'EXPIRED']).optional().catch(undefined),
+  categoryId: z.string().uuid().optional().catch(undefined),
+  orgId: z.string().uuid().optional().catch(undefined),
+  upazilaId: z.string().uuid().optional().catch(undefined),
+  page: z.coerce.number().int().min(1).catch(1),
+});
+
+export type SyncItemInput = z.infer<typeof syncItemSchema>;
+export type PushInput = z.infer<typeof pushSchema>;
+export type LedgerQuery = z.infer<typeof ledgerQuerySchema>;

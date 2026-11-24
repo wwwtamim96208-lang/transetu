@@ -400,3 +400,15 @@ export async function listAreas() {
   return prisma.area.findMany({ orderBy: [{ level: 'asc' }, { name: 'asc' }], select: { id: true, name: true, nameBn: true, level: true, parentId: true } });
 }
 export type AreaDTO = Awaited<ReturnType<typeof listAreas>>[number];
+
+// ---------------------------------------------------------------- card reprint
+
+/** Re-derive a household's card code for reprinting. Only its org's coordinator or an admin. Audit-logged. */
+export async function revealCardCode(user: SessionUser, id: string) {
+  const h = await loadForUser(user, id);
+  if (!canEditHousehold(user, h) || user.role === 'VOLUNTEER') {
+    throw new HttpError(403, 'FORBIDDEN', 'শুধু নিবন্ধনকারী সংস্থার সমন্বয়কারী বা প্রশাসক কার্ড দেখতে পারেন।');
+  }
+  await audit(prisma, { userId: user.id, action: 'CARD_CODE_VIEW', entityType: 'Household', entityId: id });
+  return { cardCode: generateCardCode(env.cardSecret, id), headName: h.headName, wardName: h.ward.nameBn };
+}

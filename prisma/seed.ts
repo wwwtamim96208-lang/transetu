@@ -153,8 +153,10 @@ async function main() {
   );
 
   console.log(`Creating ${list.length} households…`);
+  const createdIds: { id: string; wardId: string }[] = [];
   for (const h of list) {
     const id = randomUUID();
+    createdIds.push({ id, wardId: h.wardId });
     await prisma.household.create({
       data: {
         id, headName: h.headName, headNameKey: nameKey(h.headName), phone: h.phone,
@@ -166,6 +168,56 @@ async function main() {
       },
     });
   }
+
+  // ---- Allotments: stock handed to volunteers for their field trip ----
+  const stockOf = (orgId: string, categoryId: string, upazila: string) =>
+    prisma.stock.findUniqueOrThrow({ where: { orgId_categoryId_areaId: { orgId, categoryId, areaId: upazilas[upazila] } } });
+  const allot = async (volunteerId: string, orgId: string, categoryId: string, upazila: string, quantity: number) => {
+    const st = await stockOf(orgId, categoryId, upazila);
+    await prisma.stock.update({ where: { id: st.id }, data: { quantity: { decrement: quantity } } });
+    await prisma.allotment.create({ data: { stockId: st.id, volunteerId, quantity, remaining: quantity } });
+  };
+  await allot(vol1.id, alo.id, food.id, 'Tahirpur', 30);
+  await allot(vol1.id, alo.id, water.id, 'Tahirpur', 400);
+  await allot(vol1.id, alo.id, med.id, 'Tahirpur', 10);
+  await allot(vol2.id, alo.id, food.id, 'Tahirpur', 20);
+  await allot(vol3.id, setu.id, food.id, 'Jamalganj', 20);
+  await allot(vol3.id, setu.id, water.id, 'Jamalganj', 200);
+
+  // ---- Past deliveries (before this system's allotments; no stock link) ----
+  const orgUsers = [
+    { orgId: alo.id, userId: coordAlo.id }, { orgId: setu.id, userId: coordSetu.id }, { orgId: govt.id, userId: admin.id },
+  ];
+  const cats = [food, food, water, med];
+  const DAY = 24 * 60 * 60 * 1000;
+  const past = createdIds.slice(0, -2).filter(() => chance(0.3)); // keep demo households clean
+  for (const h of past) {
+    const by = pick(orgUsers);
+    const cat = pick(cats);
+    const occurredAt = new Date(Date.now() - int(1, 12) * DAY - int(0, 600) * 60000);
+    await prisma.distribution.create({
+      data: {
+        householdId: h.id, categoryId: cat.id, quantity: cat.code === 'WATER' ? int(20, 60) : 1, orgId: by.orgId, volunteerId: by.userId,
+        status: 'DELIVERED', confirmMethod: 'TOKEN_CARD', confirmedAt: occurredAt, occurredAt, syncedAt: occurredAt,
+      },
+    });
+  }
+  // Demo case: রহিমা বেগম got food from Setubandhan 3 days ago -> Alo's volunteer will see a cooldown warning.
+  const rahima = createdIds[createdIds.length - 1];
+  const threeDaysAgo = new Date(Date.now() - 3 * DAY);
+  await prisma.distribution.create({
+    data: {
+      householdId: rahima.id, categoryId: food.id, quantity: 1, orgId: setu.id, volunteerId: coordSetu.id,
+      status: 'DELIVERED', confirmMethod: 'TOKEN_CARD', confirmedAt: threeDaysAgo, occurredAt: threeDaysAgo, syncedAt: threeDaysAgo,
+    },
+  });
+  console.log(`Created ${past.length + 1} past deliveries; ${createdIds.length - past.length - 1} households have received nothing yet.`);
+
+  // Card codes for the demo households (printed cards in real life).
+  const rahim = createdIds[createdIds.length - 2];
+  console.log('\nDemo token-card codes (Tahirpur Sadar Ward 1):');
+  console.log(`  মোঃ রহিম উদ্দিন : ${generateCardCode(CARD_SECRET!, rahim.id)}`);
+  console.log(`  রহিমা বেগম      : ${generateCardCode(CARD_SECRET!, rahima.id)}`);
 
   console.log('\nDone. Demo accounts (password: ' + DEMO_PASSWORD + '):');
   for (const u of [admin, coordAlo, coordSetu, vol1, vol2, vol3]) console.log(`  ${u.role.padEnd(11)} ${u.email}`);

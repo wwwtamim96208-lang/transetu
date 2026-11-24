@@ -28,9 +28,9 @@ Affected families interact only through a printed token card.
 | Part | State |
 |---|---|
 | Household registry: CRUD, 3-tier duplicate check, roles, audit log | ✅ Day 1 |
-| Offline PWA, sync, conflict review | ⏳ Day 2 |
-| Distribution state machine, cooldown, ledger, token confirmation | ⏳ Day 3 |
-| Priority allocation (A02), gap dashboard | ⏳ Day 3 |
+| Stock, allotments, distribution state machine, token confirmation, central ledger | ✅ Day 2 |
+| Offline field mode (A04): service worker, IndexedDB, outbox, idempotent sync, conflict review | ✅ Day 2 |
+| Priority allocation planner (A02), gap / unreached dashboard | ⏳ Day 3 |
 
 ## Tech stack
 
@@ -121,6 +121,56 @@ Names are compared with a phonetic key. Honorifics (মোঃ, Md., মোছা
 - **Soft delete.** Deleting a household sets a timestamp and a reason; the ledger history stays.
 - **Audit log.** Every change is audit-logged in the same transaction, with before and after values.
 
+## Offline-first design (A04)
+
+Every distribution, online or offline, follows the same path: it is saved on the phone first (IndexedDB outbox) and then synced. That way there is one code path, and offline is the normal case, not a special one.
+
+```
+Before the trip (online)        In the field (offline OK)                 Back online
+───────────────────────         ─────────────────────────────             ─────────────────────────────
+Coordinator allots stock   ──▶  Phone ranks families by priority    ──▶  POST /api/sync/push (batch)
+Volunteer downloads pack:       Cooldown warning from local history      per item: own transaction,
+ households in own union,       Card code verified locally               household row locked,
+ card-code HASHES, history,      (WebCrypto PBKDF2, same as server)       server re-verifies code,
+ own allotments                 Saved to outbox with a device UUID       repeat check across ALL orgs
+                                Cannot exceed own allotment             ──▶ fresh pack downloaded
+```
+
+**Conflict rules.** Relief that was already handed over cannot be undone, so sync never rejects a delivery for a business conflict. It records it and **flags** it for a coordinator:
+
+| Situation | What the server does |
+|---|---|
+| Two offline volunteers give the same family the same category | Both stored. The second gets the flag `REPEAT_RELIEF` and goes to the review queue, which shows both deliveries and says the volunteer saw no warning. |
+| Volunteer saw the warning and gave anyway | Stored with their reason. Flag `REPEAT_OVERRIDDEN`. |
+| Same item synced twice (retry, double tap, two tabs) | Primary key = device UUID, so the repeat returns `duplicate` and nothing is stored twice. |
+| Card code fails on the server (tampered device) | Kept as AWAITING, flagged `CODE_REJECTED_BY_SERVER`. |
+| Allotment closed or exceeded meanwhile | Stored, flagged `ALLOTMENT_CLOSED` or `ALLOTMENT_EXCEEDED`. |
+| Phone clock in the future | Time clamped to server time, flagged `CLOCK_AHEAD`. |
+| Not confirmed within 24 h | Status becomes EXPIRED, the goods stay counted as given, and it goes to review. |
+| Item edited on the phone while a sync is in flight | That item's result is ignored. It stays pending and syncs again. |
+| Session expired while offline | Sync returns 401. The outbox is kept, the volunteer logs in again, and nothing is lost. |
+| Server error on one item | Only that item is marked retryable; the other items still sync. |
+
+**Stock never drifts.** On the phone, remaining stock is always recomputed as: server snapshot minus local handovers not yet reflected in that snapshot. The phone never edits the snapshot. This rule is unit-tested.
+
+**Security offline.**
+
+- The phone holds only the volunteer's own union.
+- It holds card-code hashes (PBKDF2, salted per household), not the codes.
+- No NIDs are downloaded.
+- New distributions are blocked once the pack is more than 72 hours old.
+- A shared phone never pushes another volunteer's records.
+
+### Distribution state machine
+
+```
+DISPATCHED ─▶ AWAITING_CONFIRMATION ─▶ DELIVERED      (card code verified)
+                    │        └──────▶ EXPIRED ─▶ DELIVERED (late, valid code)
+                    └──▶ FAILED                        (not given: stock returned)
+```
+
+A distribution counts as **DELIVERED only after the family's card code is verified**: on the phone, again on the server, or later at the office.
+
 ## Configurable numbers (seed)
 
 | Category | Unit | Need basis | Need / day | Cooldown |
@@ -151,6 +201,21 @@ Log in as `coord.alo@demo.bd` and open **New household**. Select **তাহি�
 4. Double-click **Save** or retry after losing connection. Only one record is created.
 5. Open the same household in two tabs and edit both. The second save gets a version-conflict message.
 6. Log in as `vol3@demo.bd`. Households outside Fenarbak are invisible, and their URLs return 404.
+
+## Demo cases (Day 2: offline)
+
+Run `npm run db:seed`. It prints two demo card codes.
+
+1. Log in as `vol1@demo.bd` in a normal window and `vol2@demo.bd` in an Incognito window. Both are Alo Foundation volunteers in Tahirpur Sadar.
+2. In both windows, open **মাঠের কাজ** and press **ডাউনলোড**.
+3. In both windows, open DevTools, go to Network and select **Offline**. Reload: the page still opens.
+4. Both volunteers give **খাদ্য প্যাকেট** to **মোঃ রহিম উদ্দিন**. vol1 enters the card code; vol2 uses "কার্ড ছাড়া".
+5. Set both windows back to Online. They auto-sync, and the second one shows the flag "একই ত্রাণ বারবার".
+6. Log in as `coord.alo@demo.bd` and open **যাচাই**. The review item shows both deliveries and that neither volunteer saw a warning.
+7. Log in as vol1 and select **রহিমা বেগম**. A cooldown warning appears (Setubandhan gave her food 3 days ago), and continuing requires a reason.
+8. Enter a wrong card code 3 times. The code entry is locked, and only "কার্ড ছাড়া" (unconfirmed) is allowed.
+
+Test offline on the deployed HTTPS site or with `npm run build && npm start`. The service worker is unreliable under `npm run dev`.
 
 ## Limitations and notes
 

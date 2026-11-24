@@ -258,6 +258,11 @@ model Distribution {
   confirmedAt      DateTime?
   /// Set when given inside the cooldown window.
   overrideReason   String?
+  /// Free text, e.g. why a delivery failed.
+  note             String?
+  /// True while this distribution's quantity is deducted from its allotment.
+  /// Prevents double restore when it later fails or expires.
+  stockConsumed    Boolean            @default(false)
   /// When it happened on the device (may be long before sync).
   occurredAt       DateTime
   createdOffline   Boolean            @default(false)

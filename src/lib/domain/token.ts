@@ -7,21 +7,18 @@
 // - The browser verifies with WebCrypto PBKDF2 using the same parameters
 //   (implemented in the offline module on Day 2).
 import { createHmac, pbkdf2Sync, timingSafeEqual } from 'node:crypto';
+import { CODE_HASH_ITERATIONS, normalizeCardCode } from './cardcode';
+
+export { CODE_HASH_ITERATIONS, normalizeCardCode };
 
 // Crockford base32: no I, L, O, U -> fewer misreadings from a printed card.
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-export const CODE_HASH_ITERATIONS = 20000;
 
 export function generateCardCode(secret: string, householdId: string): string {
   const mac = createHmac('sha256', secret).update(`card:v1:${householdId}`).digest();
   let code = '';
   for (let i = 0; i < 8; i++) code += ALPHABET[mac[i] % 32];
   return `${code.slice(0, 4)}-${code.slice(4)}`;
-}
-
-/** Normalise what a volunteer types: case, dashes, spaces, O->0, I/L->1. */
-export function normalizeCardCode(input: string): string {
-  return input.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
 }
 
 export function hashCardCode(code: string, householdId: string): string {

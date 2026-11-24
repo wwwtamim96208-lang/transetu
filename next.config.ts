@@ -12,6 +12,14 @@ const nextConfig: NextConfig = {
           { key: 'Referrer-Policy', value: 'same-origin' },
         ],
       },
+      {
+        // Service worker must never be served stale, or offline fixes would not reach phones.
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
     ];
   },
 };

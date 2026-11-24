@@ -5,6 +5,9 @@ import { HttpError } from '@/lib/http';
 import { getHousehold, listAreas } from '@/lib/households';
 import { HouseholdForm } from '@/components/HouseholdForm';
 import { DeleteHousehold } from '@/components/DeleteHousehold';
+import { RevealCard } from '@/components/RevealCard';
+import { householdHistory } from '@/lib/distributions';
+import { STATUS_BN, type DistStatus } from '@/lib/domain/distribution';
 
 const DAMAGE_BN = { NONE: 'নেই', PARTIAL: 'আংশিক', SEVERE: 'গুরুতর', TOTAL: 'সম্পূর্ণ' } as const;
 const GENDER_BN = { MALE: 'পুরুষ', FEMALE: 'নারী', OTHER: 'অন্যান্য' } as const;
@@ -19,7 +22,7 @@ export default async function HouseholdPage({ params }: { params: Promise<{ id: 
     if (e instanceof HttpError && e.status === 404) notFound();
     throw e;
   });
-  const areas = h.canEdit ? await listAreas() : [];
+  const [areas, history] = await Promise.all([h.canEdit ? listAreas() : Promise.resolve([]), householdHistory(h.id)]);
 
   return (
     <div className="stack">
@@ -49,6 +52,24 @@ export default async function HouseholdPage({ params }: { params: Promise<{ id: 
           </>
         )}
       </section>
+
+      <section className="card" aria-labelledby="hist-h">
+        <h2 id="hist-h" style={{ marginTop: 0 }}>ত্রাণের ইতিহাস (সব সংস্থা)</h2>
+        {history.length === 0 ? (
+          <p><strong>এই পরিবার এখনো কোনো ত্রাণ পায়নি।</strong></p>
+        ) : (
+          <ul>
+            {history.map((d) => (
+              <li key={d.id}>
+                {d.occurredAt.toLocaleString('bn-BD', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} — {d.category.nameBn} × {d.quantity.toLocaleString('bn-BD')} {d.category.unit}, {d.org.nameBn} ({d.volunteer.name}){' '}
+                <span className={`badge ${d.status === 'DELIVERED' ? '' : 'badge-warn'}`}>{STATUS_BN[d.status as DistStatus]}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {h.canEdit && user.role !== 'VOLUNTEER' && <RevealCard id={h.id} />}
 
       {h.canEdit ? (
         <section className="stack no-print">
