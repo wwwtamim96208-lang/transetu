@@ -9,11 +9,11 @@ import { verifyCardCodeWeb } from '@/lib/domain/token-web';
 import { looksLikeCardCode } from '@/lib/domain/cardcode';
 import { suggestedQuantity, STATUS_BN, type DistStatus } from '@/lib/domain/distribution';
 import { FLAG_BN } from '@/lib/domain/flags';
+import { fmtDateTime, unitBn } from '@/lib/domain/format';
 
 const LOCAL_CODE_TRIES = 3;
 const bn = (n: number) => n.toLocaleString('bn-BD');
-const timeBn = (iso: string) =>
-  new Date(iso).toLocaleString('bn-BD', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+const timeBn = (iso: string) => fmtDateTime(iso);
 
 function useOnline() {
   const [online, setOnline] = useState(true);
@@ -85,6 +85,10 @@ export function FieldApp({ userId, userName }: { userId: string; userName: strin
       setBusy(false);
       if (!r.ok) {
         if (!quiet || r.reason === 'auth') setMsg({ kind: r.reason === 'offline' ? 'warn' : 'error', text: r.message });
+        return;
+      }
+      if (!r.pushed && !r.flagged && !r.rejected) {
+        if (!quiet) setMsg({ kind: 'ok', text: 'সব হালনাগাদ আছে। পাঠানোর মতো নতুন কিছু নেই, এলাকার ডেটা নতুন করে নামানো হয়েছে।' });
         return;
       }
       const parts = [`${bn(r.pushed)}টি বিতরণ sync হয়েছে`];
@@ -201,7 +205,7 @@ export function FieldApp({ userId, userName }: { userId: string; userName: strin
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {pack.allotments.map((a) => {
             const c = pack.categories.find((x) => x.id === a.categoryId);
-            return <span key={a.id} className="badge" style={{ fontSize: '0.95rem' }}>{c?.nameBn}: {bn(remaining[a.id] ?? 0)} / {bn(a.quantity)} {c?.unit}</span>;
+            return <span key={a.id} className="badge" style={{ fontSize: '0.95rem' }}>{c?.nameBn}: {bn(remaining[a.id] ?? 0)} / {bn(a.quantity)} {unitBn(c?.unit ?? '')}</span>;
           })}
         </div>
       </section>
@@ -295,7 +299,7 @@ function DistributePanel(props: {
     const q = Number(qty);
     let problem: string | null = null;
     if (!Number.isInteger(q) || q < 1) problem = 'সঠিক পরিমাণ দিন।';
-    else if (q > remaining) problem = `আপনার হাতে আছে মাত্র ${bn(remaining)} ${category.unit}।`;
+    else if (q > remaining) problem = `আপনার হাতে আছে মাত্র ${bn(remaining)} ${unitBn(category.unit)}।`;
     else if (needsOverride && override.trim().length < 10) problem = 'আগে পেয়েছে, তবুও দিলে কারণ লিখুন (কমপক্ষে ১০ অক্ষর)।';
     if (problem) {
       setError(problem);
@@ -357,7 +361,7 @@ function DistributePanel(props: {
       {needsOverride && ranked.last && (
         <div className="alert alert-warn" role="alert">
           <strong>সতর্কতা:</strong> এই পরিবার {bn(ranked.cooldown.daysSince ?? 0)} দিন আগে {ranked.last.orgName}-এর কাছ থেকে {category.nameBn} পেয়েছে
-          ({category.cooldownDays} দিনের মধ্যে আবার দেওয়ার নিয়ম নেই)।
+          ({bn(category.cooldownDays)} দিনের মধ্যে আবার দেওয়ার নিয়ম নেই)।
           <div style={{ marginTop: '0.5rem' }}>
             <label htmlFor="override">তবুও দিলে কারণ *</label>
             <input id="override" type="text" value={override} onChange={(e) => setOverride(e.target.value)} placeholder="যেমন: আগের খাবার বন্যার পানিতে নষ্ট হয়েছে" />
@@ -367,7 +371,7 @@ function DistributePanel(props: {
 
       <div className="grid">
         <div>
-          <label htmlFor="qty">পরিমাণ ({category.unit}) <span className="hint">— হাতে আছে {bn(remaining)}</span></label>
+          <label htmlFor="qty">পরিমাণ ({unitBn(category.unit)}) <span className="hint">— হাতে আছে {bn(remaining)}</span></label>
           <input id="qty" type="number" min={1} max={remaining} value={qty} onChange={(e) => setQty(e.target.value)} />
         </div>
         <div>

@@ -30,7 +30,7 @@ Affected families interact only through a printed token card.
 | Household registry: CRUD, 3-tier duplicate check, roles, audit log | ✅ Day 1 |
 | Stock, allotments, distribution state machine, token confirmation, central ledger | ✅ Day 2 |
 | Offline field mode (A04): service worker, IndexedDB, outbox, idempotent sync, conflict review | ✅ Day 2 |
-| Priority allocation planner (A02), gap / unreached dashboard | ⏳ Day 3 |
+| Priority allocation planner (A02), gap / unreached dashboard | ✅ Day 3 |
 
 ## Tech stack
 
@@ -170,6 +170,53 @@ DISPATCHED ─▶ AWAITING_CONFIRMATION ─▶ DELIVERED      (card code verifie
 ```
 
 A distribution counts as **DELIVERED only after the family's card code is verified**: on the phone, again on the server, or later at the office.
+
+## Allocation planner (A02)
+
+`/plan` answers a practical question: *"We have 100 food packs for this union and 300 families. Who gets them first, and why?"*
+
+**Inputs:**
+
+- category, union, stock
+- how much of the stock to use
+- a per-household cap
+- a maximum number of households (for example, one boat trip)
+- "must include" groups: disabled, elderly, under-5, pregnant, chronically ill
+- whether to skip families that were served recently
+- whether to share stock thinly or give full shares
+
+**Engine.** `src/lib/domain/allocate.ts` is a pure function, unit-tested and deterministic: the same input always gives the same plan.
+
+1. It scores every household with the explainable priority score. Every point has a Bangla reason.
+2. It excludes families still inside the category's cooldown window.
+3. It orders households: must-include first, then by score; ties are broken by name and then id.
+4. It allocates either full shares in priority order (leftover still goes to the next family that fits), or a proportional reduced share with top-up by priority.
+5. It returns the plan, everyone who was not covered with the reason, and **conflicts**:
+
+| Conflict | Severity | Behaviour |
+|---|---|---|
+| Must-include need exceeds the stock | blocking (`feasible: false`) | Best partial plan: must-include families served first, in priority order. |
+| More must-include families than the household limit | blocking | The highest-priority families are taken up to the limit. |
+| A must-include family is in cooldown | warning | Cooldown wins: a just-served family is not served again ahead of unserved ones. |
+| Total need exceeds stock | warning | Partial coverage, explained. |
+| Zero stock / nobody eligible / invalid numbers | blocking | No allocation, clear message, no crash. |
+
+**Applying a plan** gives the planned total to one volunteer as an allotment, using the same atomic stock decrement. The household-by-household plan is stored in the audit log (`PLAN_APPLIED`). The volunteer's phone ranks families with the same rules, so the field order matches the plan.
+
+## Gap dashboard (problems 5 and 7)
+
+`/dashboard` (scoped by upazila or union) shows:
+
+- **Per category, for one cooldown cycle:**
+  - **need:** each household's suggested quantity, e.g. 1 food pack per household per 7 days, or 3 L of water per person per day
+  - **delivered:** only card-confirmed deliveries count; handed-over but unconfirmed ones are listed separately
+  - **remaining gap**
+  - **stock on hand**, including volunteers' unused allotments, and what percentage of the gap it can cover
+  - **household coverage %**
+- **Per union:** households, how many are still unreached, and coverage for each category.
+- **Unreached families:** households with **no confirmed delivery ever**, ranked by priority with reasons, and flagged when they have no phone (someone has to visit in person). One click goes to the planner.
+
+The calculations are in `src/lib/domain/gap.ts` and unit-tested.
 
 ## Configurable numbers (seed)
 

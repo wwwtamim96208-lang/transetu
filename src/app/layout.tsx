@@ -34,8 +34,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   </>
                 ) : (
                   <>
+                    <Link href="/dashboard">ড্যাশবোর্ড</Link>
                     <Link href="/households">পরিবার</Link>
                     <Link href="/households/new">নতুন পরিবার</Link>
+                    <Link href="/plan">বরাদ্দ পরিকল্পনা</Link>
                     <Link href="/distributions">বিতরণ লেজার</Link>
                     <Link href="/stock">স্টক ও বরাদ্দ</Link>
                     <Link href="/reviews">যাচাই{openReviews > 0 ? ` (${openReviews.toLocaleString('bn-BD')})` : ''}</Link>

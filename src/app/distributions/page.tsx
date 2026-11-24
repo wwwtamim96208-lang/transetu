@@ -6,6 +6,7 @@ import { listLedger } from '@/lib/distributions';
 import { ledgerQuerySchema } from '@/lib/validation';
 import { STATUS_BN, type DistStatus } from '@/lib/domain/distribution';
 import { ConfirmDistribution } from '@/components/ConfirmDistribution';
+import { fmtDateTime, unitBn } from '@/lib/domain/format';
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
 const bn = (n: number) => n.toLocaleString('bn-BD');
@@ -36,7 +37,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: SP })
           return (
             <div key={d.categoryId} className="card">
               <div className="hint">{c?.nameBn} — নিশ্চিত বিতরণ</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{bn(d._sum.quantity ?? 0)} {c?.unit}</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{bn(d._sum.quantity ?? 0)} {unitBn(c?.unit ?? '')}</div>
               <div className="hint">{bn(d._count._all)}টি বিতরণ</div>
             </div>
           );
@@ -112,14 +113,14 @@ export default async function LedgerPage({ searchParams }: { searchParams: SP })
             {data.rows.map((d) => (
               <tr key={d.id}>
                 <td>
-                  {d.occurredAt.toLocaleString('bn-BD', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                  {fmtDateTime(d.occurredAt)}
                   {d.createdOffline && <div><span className="badge">অফলাইনে</span></div>}
                 </td>
                 <td>
                   <Link href={`/households/${d.household.id}`}>{d.household.headName}</Link>
                   <div className="hint">{d.household.ward.parent?.nameBn}, {d.household.ward.nameBn}</div>
                 </td>
-                <td>{d.category.nameBn} × {bn(d.quantity)} {d.category.unit}{d.overrideReason && <div className="hint">ব্যতিক্রমের কারণ: {d.overrideReason}</div>}</td>
+                <td>{d.category.nameBn} × {bn(d.quantity)} {unitBn(d.category.unit)}{d.overrideReason && <div className="hint">ব্যতিক্রমের কারণ: {d.overrideReason}</div>}</td>
                 <td>
                   <span className={`badge ${d.status === 'DELIVERED' ? '' : d.status === 'FAILED' || d.status === 'EXPIRED' ? 'badge-danger' : 'badge-warn'}`}>
                     {STATUS_BN[d.status as DistStatus]}

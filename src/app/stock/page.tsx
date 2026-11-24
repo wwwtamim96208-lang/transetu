@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth';
 import { stockOverview } from '@/lib/stock';
 import { AllotForm, CloseAllotmentButton, ReceiveForm } from '@/components/StockForms';
+import { unitBn } from '@/lib/domain/format';
 
 const bn = (n: number) => n.toLocaleString('bn-BD');
 
@@ -27,7 +28,7 @@ export default async function StockPage() {
                 <tr key={s.id}>
                   <td>{s.area.nameBn}</td>
                   <td>{s.category.nameBn}</td>
-                  <td>{bn(s.quantity)} {s.category.unit}</td>
+                  <td>{bn(s.quantity)} {unitBn(s.category.unit)}</td>
                   {user.role === 'ADMIN' && <td>{s.org.nameBn}</td>}
                 </tr>
               ))}
@@ -38,11 +39,11 @@ export default async function StockPage() {
 
       <div className="grid">
         <AllotForm
-          stocks={data.stocks.map((s) => ({ id: s.id, label: `${s.area.nameBn} · ${s.category.nameBn} (${s.quantity} ${s.category.unit})`, orgId: s.orgId, areaId: s.areaId }))}
+          stocks={data.stocks.map((s) => ({ id: s.id, label: `${s.area.nameBn} · ${s.category.nameBn} (${bn(s.quantity)} ${unitBn(s.category.unit)})`, orgId: s.orgId, areaId: s.areaId }))}
           volunteers={data.volunteers.map((v) => ({ id: v.id, label: `${v.name} — ${v.area?.nameBn ?? 'এলাকা নেই'}`, orgId: v.orgId, upazilaId: v.area?.parentId ?? null }))}
         />
         <ReceiveForm
-          categories={data.categories.map((c) => ({ id: c.id, label: `${c.nameBn} (${c.unit})` }))}
+          categories={data.categories.map((c) => ({ id: c.id, label: `${c.nameBn} (${unitBn(c.unit)})` }))}
           upazilas={data.upazilas.map((a) => ({ id: a.id, label: a.nameBn }))}
           orgs={data.orgs.map((o) => ({ id: o.id, label: o.nameBn }))}
         />
@@ -59,7 +60,7 @@ export default async function StockPage() {
                 <tr key={a.id}>
                   <td>{a.volunteer.name}<div className="hint">{a.volunteer.area?.nameBn}</div></td>
                   <td>{a.stock.category.nameBn}<div className="hint">{a.stock.area.nameBn}</div></td>
-                  <td>{bn(a.remaining)} / {bn(a.quantity)} {a.stock.category.unit}</td>
+                  <td>{bn(a.remaining)} / {bn(a.quantity)} {unitBn(a.stock.category.unit)}</td>
                   <td>
                     {a.status === 'ACTIVE' ? <><span className="badge">সক্রিয়</span> <CloseAllotmentButton id={a.id} /></> : <span className="badge">বন্ধ</span>}
                   </td>

@@ -4,9 +4,10 @@ import { getCurrentUser } from '@/lib/auth';
 import { FLAG_BN, listReviews } from '@/lib/reviews';
 import { DUP_REASON_BN, type DupReason } from '@/lib/domain/duplicate';
 import { ResolveReview } from '@/components/ResolveReview';
+import { bnNum, fmtDateTime, unitBn } from '@/lib/domain/format';
 
 const TYPE_BN = { DUPLICATE_HOUSEHOLD: 'সম্ভাব্য একই পরিবার', REPEAT_RELIEF: 'বারবার ত্রাণ', SYNC_CONFLICT: 'Sync সমস্যা' } as const;
-const fmt = (d: Date | string) => new Date(d).toLocaleString('bn-BD', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+const fmt = fmtDateTime;
 
 type Details = {
   level?: string; reasons?: DupReason[]; relatedName?: string; userReason?: string | null;
@@ -54,7 +55,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
 
               {r.distribution && (
                 <p style={{ margin: 0 }}>
-                  এই বিতরণ: {r.distribution.category.nameBn} × {r.distribution.quantity} — {r.distribution.org.nameBn} ({r.distribution.volunteer.name}), {fmt(r.distribution.occurredAt)}
+                  এই বিতরণ: {r.distribution.category.nameBn} × {bnNum(r.distribution.quantity)} {unitBn(r.distribution.category.unit)} — {r.distribution.org.nameBn} ({r.distribution.volunteer.name}), {fmt(r.distribution.occurredAt)}
                   {r.distribution.createdOffline && ' · অফলাইনে'}
                 </p>
               )}
@@ -63,7 +64,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
                   একই সময়ে আগের/অন্য বিতরণ:
                   <ul>
                     {(d.others ?? []).map((o, i) => (
-                      <li key={i}>{o.org} ({o.volunteer}) — {fmt(o.occurredAt)}, পরিমাণ {o.quantity}{o.offline ? ' · অফলাইনে' : ''}</li>
+                      <li key={i}>{o.org} ({o.volunteer}) — {fmt(o.occurredAt)}, পরিমাণ {bnNum(o.quantity)}{o.offline ? ' · অফলাইনে' : ''}</li>
                     ))}
                   </ul>
                   {d.overrideReason ? <p style={{ margin: 0 }}>কর্মী সতর্কতা দেখে কারণ লিখেছেন: “{d.overrideReason}”</p> : <p style={{ margin: 0 }}><strong>কর্মী সতর্কতা দেখেননি</strong> (সম্ভবত দুজনই অফলাইনে ছিলেন)।</p>}

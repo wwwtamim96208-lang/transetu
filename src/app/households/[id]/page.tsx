@@ -8,6 +8,7 @@ import { DeleteHousehold } from '@/components/DeleteHousehold';
 import { RevealCard } from '@/components/RevealCard';
 import { householdHistory } from '@/lib/distributions';
 import { STATUS_BN, type DistStatus } from '@/lib/domain/distribution';
+import { fmtDateTime, unitBn } from '@/lib/domain/format';
 
 const DAMAGE_BN = { NONE: 'নেই', PARTIAL: 'আংশিক', SEVERE: 'গুরুতর', TOTAL: 'সম্পূর্ণ' } as const;
 const GENDER_BN = { MALE: 'পুরুষ', FEMALE: 'নারী', OTHER: 'অন্যান্য' } as const;
@@ -61,7 +62,7 @@ export default async function HouseholdPage({ params }: { params: Promise<{ id: 
           <ul>
             {history.map((d) => (
               <li key={d.id}>
-                {d.occurredAt.toLocaleString('bn-BD', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} — {d.category.nameBn} × {d.quantity.toLocaleString('bn-BD')} {d.category.unit}, {d.org.nameBn} ({d.volunteer.name}){' '}
+                {fmtDateTime(d.occurredAt)} — {d.category.nameBn} × {d.quantity.toLocaleString('bn-BD')} {unitBn(d.category.unit)}, {d.org.nameBn} ({d.volunteer.name}){' '}
                 <span className={`badge ${d.status === 'DELIVERED' ? '' : 'badge-warn'}`}>{STATUS_BN[d.status as DistStatus]}</span>
               </li>
             ))}

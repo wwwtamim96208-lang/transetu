@@ -126,3 +126,35 @@ export const ledgerQuerySchema = z.object({
 export type SyncItemInput = z.infer<typeof syncItemSchema>;
 export type PushInput = z.infer<typeof pushSchema>;
 export type LedgerQuery = z.infer<typeof ledgerQuerySchema>;
+
+// ---------------------------------------------------------------- Day 3
+
+const optionalPositiveInt = z.preprocess(
+  (v) => (v === '' || v === null || v === undefined ? null : v),
+  z.coerce.number({ invalid_type_error: 'সংখ্যা লিখুন' }).int('পূর্ণ সংখ্যা লিখুন').min(1, 'কমপক্ষে ১').max(1000000).nullable(),
+);
+
+export const planSchema = z.object({
+  categoryId: z.string().uuid('ত্রাণের ধরন নির্বাচন করুন'),
+  unionId: z.string().uuid('ইউনিয়ন নির্বাচন করুন'),
+  stockId: z.string().uuid('মজুদ নির্বাচন করুন'),
+  useQuantity: optionalPositiveInt,
+  skipCooldown: z.boolean().default(true),
+  mustInclude: z.array(z.enum(['DISABILITY', 'ELDERLY', 'UNDER5', 'PREGNANT', 'CHRONIC'])).max(5).default([]),
+  perHouseholdCap: optionalPositiveInt,
+  allowPartial: z.boolean().default(false),
+  maxHouseholds: optionalPositiveInt,
+});
+
+export const applyPlanSchema = z.object({
+  stockId: z.string().uuid(),
+  volunteerId: z.string().uuid('স্বেচ্ছাসেবী নির্বাচন করুন'),
+  categoryId: z.string().uuid(),
+  unionId: z.string().uuid(),
+  lines: z.array(z.object({ householdId: z.string().uuid(), qty: z.number().int().min(1).max(100000) })).min(1, 'পরিকল্পনা খালি').max(2000),
+});
+
+export const dashboardQuerySchema = z.object({
+  upazilaId: z.string().uuid().optional().catch(undefined),
+  unionId: z.string().uuid().optional().catch(undefined),
+});
