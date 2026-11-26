@@ -7,7 +7,7 @@
 | **Track** | World Problem Solver |
 | **Declared advanced challenges** | **A04** Offline-First Functionality · **A02** Intelligent Decisions & Optimization |
 | **Live app** | https://transetu.vercel.app |
-| **Video** | _add YouTube link_ |
+| **Video** |https://youtu.be/mo9tfFNw3Jw|
 | **Test access** | Demo accounts are listed below. **The password is provided privately in the submission form.** |
 
 ## The problem
